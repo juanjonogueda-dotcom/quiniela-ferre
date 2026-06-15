@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 <style>
 :root {
   --bg:          #FFFFFF;
@@ -111,7 +112,9 @@ body {
 .t-head {
   padding: 28px 20px 20px;
   border-bottom: 1px solid var(--border);
+  display: flex; align-items: flex-end; justify-content: space-between; gap: 12px;
 }
+.t-head-left { flex: 1; min-width: 0; }
 .t-title {
   font-family: var(--f);
   font-size: 44px; font-weight: 800;
@@ -121,6 +124,19 @@ body {
   font-family: var(--f); font-size: 13px; font-weight: 400;
   color: var(--muted); margin-top: 6px;
 }
+.t-share-btn {
+  flex-shrink: 0;
+  display: flex; align-items: center; gap: 6px;
+  font-family: var(--f); font-size: 12px; font-weight: 600;
+  color: var(--ink); background: none;
+  border: 1px solid var(--border); border-radius: 20px;
+  padding: 7px 13px; cursor: pointer;
+  transition: all 0.13s; white-space: nowrap;
+  margin-bottom: 2px;
+}
+.t-share-btn:hover { background: var(--surface); border-color: var(--ink2); }
+.t-share-btn:active { background: var(--border); }
+.t-share-btn svg { flex-shrink: 0; }
 
 /* Leaderboard */
 .lb { padding-bottom: 60px; }
@@ -945,7 +961,7 @@ function vTabla(){
 
   if(!S.users.length) return `
     <div class="t-head">
-      <div class="t-title">Clasificación</div>
+      <div class="t-head-left"><div class="t-title">Clasificación</div></div>
     </div>
     <div class="empty">
       <div class="empty-icon">⚽</div>
@@ -983,11 +999,19 @@ function vTabla(){
   }).join('');
 
   return `
-    <div class="t-head">
-      <div class="t-title">Clasificación</div>
-      <div class="t-meta">${played} de ${MATCHES.length} partidos jugados</div>
-    </div>
-    <div class="lb">${rows}</div>`;
+    <div id="lb-export">
+      <div class="t-head">
+        <div class="t-head-left">
+          <div class="t-title">Clasificación</div>
+          <div class="t-meta">${played} de ${MATCHES.length} partidos jugados</div>
+        </div>
+        <button class="t-share-btn" id="share-btn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Compartir
+        </button>
+      </div>
+      <div class="lb">${rows}</div>
+    </div>`;
 }
 
 /* ── PARTIDOS ────────────────────────────── */
@@ -1260,6 +1284,30 @@ function openPM(mid){
 }
 function closePM(){ document.getElementById('pmodal').classList.add('hidden'); S.pm=null; }
 
+function shareTabla(){
+  const el=document.getElementById('lb-export');
+  if(!el) return;
+  const btn=document.getElementById('share-btn');
+  if(btn){ btn.style.display='none'; }
+  html2canvas(el,{
+    backgroundColor:'#ffffff',
+    scale:2,
+    useCORS:true,
+    logging:false
+  }).then(canvas=>{
+    if(btn){ btn.style.display=''; }
+    const date=new Date().toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit',year:'numeric'}).replace(/\//g,'-');
+    const a=document.createElement('a');
+    a.download=`quiniela-mundial-${date}.png`;
+    a.href=canvas.toDataURL('image/png');
+    a.click();
+    toast('Imagen guardada');
+  }).catch(()=>{
+    if(btn){ btn.style.display=''; }
+    toast('Error al generar imagen');
+  });
+}
+
 function toast(msg){
   const el=document.getElementById('toast');
   el.textContent=msg; el.classList.add('on');
@@ -1280,6 +1328,9 @@ document.getElementById('tabbar').addEventListener('click',e=>{
 document.getElementById('ubtn').addEventListener('click', openUM);
 
 document.getElementById('main').addEventListener('click',e=>{
+  /* Share button */
+  if(e.target.closest('#share-btn')){ shareTabla(); return; }
+
   /* Leaderboard expand */
   const lbr=e.target.closest('.lb-row');
   if(lbr){ const id=lbr.dataset.uid; S.expUid=S.expUid===id?null:id; render(); return; }
