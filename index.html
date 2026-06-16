@@ -554,6 +554,40 @@ body {
 }
 .adm-clr:hover { border-color: var(--ink2); color: var(--ink); }
 
+.adm-users-sec {
+  padding: 16px 20px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.adm-users-title {
+  font-family: var(--f); font-size: 13px; font-weight: 700;
+  color: var(--muted); letter-spacing: 0.05em; text-transform: uppercase;
+  margin-bottom: 10px;
+}
+.adm-user-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-lt);
+}
+.adm-user-row:last-child { border-bottom: none; }
+.adm-user-dot {
+  width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+}
+.adm-user-name {
+  font-family: var(--f); font-size: 15px; font-weight: 600;
+  color: var(--ink); flex: 1;
+}
+.adm-del-user {
+  padding: 5px 12px;
+  background: none; border: 1px solid var(--border); border-radius: 6px;
+  font-family: var(--f); font-size: 12px; font-weight: 600; color: var(--muted);
+  cursor: pointer; transition: all 0.12s;
+}
+.adm-del-user:hover { border-color: #e53e3e; color: #e53e3e; }
+.adm-users-empty {
+  font-family: var(--f); font-size: 13px; color: var(--muted);
+  padding: 8px 0;
+}
+
 /* ═══════════════════════════════════════════
    MODALS
 ═══════════════════════════════════════════ */
@@ -1454,11 +1488,24 @@ function vAdmin(){
     return `<div><div class="day-hdr">${ds}</div>${rows}</div>`;
   }).join('');
 
+  const usersSection = `
+    <div class="adm-users-sec">
+      <div class="adm-users-title">Jugadores</div>
+      ${S.users.length
+        ? S.users.map(u=>`
+          <div class="adm-user-row">
+            <div class="adm-user-dot" style="background:${u.color}"></div>
+            <span class="adm-user-name">${u.name}</span>
+            <button class="adm-del-user" data-del-uid="${u.id}">Eliminar</button>
+          </div>`).join('')
+        : `<div class="adm-users-empty">No hay jugadores.</div>`}
+    </div>`;
+
   return `
     <div class="adm-hdr">
       <div class="adm-hdr-title">Resultados</div>
       <button class="adm-relock" id="adm-lock">Bloquear</button>
-    </div>${secs}<div style="height:48px"></div>`;
+    </div>${usersSection}${secs}<div style="height:48px"></div>`;
 }
 
 /* ════════════════════════════════════════════
@@ -1648,6 +1695,15 @@ document.getElementById('main').addEventListener('click',e=>{
   }
   const cl=e.target.closest('[data-clr]');
   if(cl){ delete S.results[cl.dataset.clr]; persist(); render(); toast('Resultado eliminado'); return; }
+
+  const du=e.target.closest('[data-del-uid]');
+  if(du){
+    const uid=du.dataset.delUid;
+    S.users=S.users.filter(u=>u.id!==uid);
+    Object.keys(S.predictions).forEach(k=>{ if(k.startsWith(uid+'_')) delete S.predictions[k]; });
+    if(S.cur===uid) S.cur=S.users[0]?.id||null;
+    persist(); render(); toast('Jugador eliminado'); return;
+  }
 });
 
 document.getElementById('umodal').addEventListener('click',e=>{
