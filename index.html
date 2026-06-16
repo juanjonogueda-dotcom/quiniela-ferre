@@ -1607,7 +1607,8 @@ function openPM(mid){
         `<div style="margin-top:12px;font-family:var(--f);font-size:13px;color:var(--muted)">Sin predicción</div>`}
       </div>
       <div class="pm-actions">
-        <button class="pm-save" id="pm-cls" style="flex:1">Cerrar</button>
+        ${p?`<button class="pm-del" id="pm-del">Eliminar</button>`:''}
+        <button class="pm-save" id="pm-cls" style="${p?'':'flex:1'}">Cerrar</button>
       </div>`;
   } else {
     S.pm={mid, g1:p?+p.g1:0, g2:p?+p.g2:0};
