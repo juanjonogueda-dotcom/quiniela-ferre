@@ -29,7 +29,7 @@
   --th:          44px;
 }
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-html { -webkit-text-size-adjust: none; overflow-x: hidden; }
+html { -webkit-text-size-adjust: none; }
 body {
   background: var(--bg);
   color: var(--ink);
@@ -37,13 +37,12 @@ body {
   font-size: 15px;
   line-height: 1.45;
   min-height: 100dvh;
-  overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
 }
 #app {
   display: flex; flex-direction: column;
   min-height: 100dvh;
-  overflow-x: hidden;
+  width: 100%;
 }
 
 /* ── HEADER ──────────────────────────────── */
@@ -113,9 +112,9 @@ body {
 .tab:hover:not(.on) { color: var(--ink2); }
 
 /* ── CONTENT AREA ────────────────────────── */
-#content-area { display: flex; flex: 1; }
+#content-area { display: flex; flex: 1; min-height: 0; }
 #sidebar { display: none; }
-#main { flex: 1; min-height: calc(100dvh - var(--hh) - var(--th)); }
+#main { flex: 1; min-width: 0; }
 
 /* ═══════════════════════════════════════════
    TABLA VIEW
