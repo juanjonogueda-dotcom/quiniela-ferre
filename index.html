@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <title>Mundial 2026</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚽</text></svg>">
+<meta name="theme-color" content="#111111">
+<meta name="description" content="Quiniela del Mundial 2026">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -103,8 +106,10 @@ body {
 .tab.on { color: var(--ink); border-bottom-color: var(--ink); }
 .tab:hover:not(.on) { color: var(--ink2); }
 
-/* ── MAIN ────────────────────────────────── */
-#main { min-height: calc(100dvh - var(--hh) - var(--th)); }
+/* ── CONTENT AREA ────────────────────────── */
+#content-area { display: flex; flex: 1; }
+#sidebar { display: none; }
+#main { flex: 1; min-height: calc(100dvh - var(--hh) - var(--th)); }
 
 /* ═══════════════════════════════════════════
    TABLA VIEW
@@ -739,15 +744,59 @@ body {
 /* ── UTILITY ──────────────────────────────── */
 .hidden { display: none !important; }
 
-/* ── DESKTOP ──────────────────────────────── */
-@media (min-width: 580px) {
-  body { background: #F0F0F0; }
+/* ── TABLET / SMALL DESKTOP ───────────────── */
+@media (min-width: 580px) and (max-width: 899px) {
+  body { background: #EBEBEB; }
   #app {
-    max-width: 560px; margin: 0 auto;
+    max-width: 620px; margin: 0 auto;
     background: var(--bg);
     min-height: 100dvh;
-    box-shadow: 0 0 60px rgba(0,0,0,0.08);
+    box-shadow: 0 0 60px rgba(0,0,0,0.10);
   }
+}
+
+/* ── DESKTOP: two-column layout ───────────── */
+@media (min-width: 900px) {
+  body { background: #E0E0E0; overflow: hidden; }
+  #app {
+    max-width: 1400px; margin: 0 auto;
+    height: 100dvh; overflow: hidden;
+    background: var(--bg);
+    box-shadow: 0 0 80px rgba(0,0,0,0.14);
+    display: flex; flex-direction: column;
+  }
+  #hdr { flex-shrink: 0; }
+  #tabbar { flex-shrink: 0; }
+  #content-area {
+    display: flex; flex: 1; overflow: hidden;
+  }
+  #sidebar {
+    display: block;
+    width: 360px; flex-shrink: 0;
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+  }
+  #main {
+    flex: 1; min-width: 0;
+    overflow-y: auto;
+    min-height: unset;
+  }
+  #tab-tabla { display: none; }
+  .p-pills { flex-wrap: wrap; overflow-x: visible; scrollbar-width: auto; }
+  .p-pills::-webkit-scrollbar { display: block; height: 3px; }
+  .p-pills::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  .modal-bg { align-items: center; }
+  .modal-sheet {
+    border-radius: 14px; max-width: 480px;
+    animation: shFade 0.18s ease;
+  }
+}
+@keyframes shFade {
+  from { opacity: 0; transform: scale(0.97); }
+  to   { opacity: 1; transform: scale(1); }
+}
+@media (min-width: 1200px) {
+  #sidebar { width: 400px; }
 }
 </style>
 </head>
@@ -766,12 +815,15 @@ body {
   </header>
 
   <nav id="tabbar">
-    <button class="tab on" data-v="tabla">Tabla</button>
+    <button class="tab on" id="tab-tabla" data-v="tabla">Tabla</button>
     <button class="tab" data-v="partidos">Partidos</button>
     <button class="tab" data-v="admin">Admin</button>
   </nav>
 
-  <main id="main"></main>
+  <div id="content-area">
+    <aside id="sidebar"></aside>
+    <main id="main"></main>
+  </div>
 </div>
 
 <!-- USER MODAL -->
@@ -986,10 +1038,22 @@ function genId(){ return Date.now().toString(36)+Math.random().toString(36).slic
 /* ════════════════════════════════════════════
    RENDER
 ════════════════════════════════════════════ */
+function isDesktop(){ return window.innerWidth>=900; }
+
 function render(){
   const u=getU(S.cur);
   document.getElementById('uname').textContent = u?u.name:'—';
   document.getElementById('udot').style.background = u?u.color:'rgba(255,255,255,0.2)';
+
+  const sidebar=document.getElementById('sidebar');
+  if(isDesktop()){
+    sidebar.innerHTML=vTabla();
+    if(S.view==='tabla') S.view='partidos';
+    document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.v===S.view));
+  } else {
+    sidebar.innerHTML='';
+  }
+
   const m=document.getElementById('main');
   if(S.view==='tabla')    m.innerHTML=vTabla();
   else if(S.view==='partidos') m.innerHTML=vPartidos();
@@ -1420,6 +1484,12 @@ document.getElementById('tabbar').addEventListener('click',e=>{
 
 document.getElementById('ubtn').addEventListener('click', openUM);
 
+document.getElementById('sidebar').addEventListener('click',e=>{
+  if(e.target.closest('#share-btn')){ shareTabla(); return; }
+  const lbr=e.target.closest('.lb-row');
+  if(lbr){ const id=lbr.dataset.uid; S.expUid=S.expUid===id?null:id; render(); return; }
+});
+
 document.getElementById('main').addEventListener('click',e=>{
   /* Share button */
   if(e.target.closest('#share-btn')){ shareTabla(); return; }
@@ -1506,6 +1576,9 @@ document.addEventListener('keydown',e=>{
   if(e.target.id==='um-inp') document.getElementById('um-btn').click();
   if(e.target.id==='adm-pass') document.getElementById('adm-ok')?.click();
 });
+
+let _resizeT;
+window.addEventListener('resize',()=>{ clearTimeout(_resizeT); _resizeT=setTimeout(render,150); });
 
 /* ════════════════════════════════════════════
    INIT
