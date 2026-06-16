@@ -309,7 +309,7 @@ body {
 .p-ctrl {
   display: flex; align-items: center;
   padding: 10px 20px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-lt);
   flex-wrap: wrap;
   gap: 8px;
 }
@@ -351,12 +351,24 @@ body {
   color: var(--muted);
 }
 
+/* Sticky header wrapper — partidos only */
+.p-sticky-header {
+  position: sticky;
+  top: calc(var(--hh) + var(--th));
+  z-index: 50;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+@media (min-width: 900px) {
+  /* On desktop #main is the scroll container, sticky starts at its top */
+  .p-sticky-header { top: 0; }
+}
+
 /* Day navigator (partidos only) */
 .p-day-nav {
   display: flex; gap: 5px; overflow-x: auto;
   scrollbar-width: none;
   padding: 8px 20px;
-  border-bottom: 1px solid var(--border);
 }
 .p-day-nav::-webkit-scrollbar { display: none; }
 .p-day-btn {
@@ -1471,14 +1483,14 @@ function vPartidos(){
     </div>`;
   }
 
-  return `
+  return `<div class="p-sticky-header">
     <div class="p-ctrl">
       <div class="p-view-toggle">
         <button class="p-vtab${vm==='me'?' on':''}" data-vm="me">Mi quiniela</button>
         <button class="p-vtab${vm==='all'?' on':''}" data-vm="all">Todos</button>
       </div>
       <div class="p-pills">${pills}</div>
-    </div>${dayNav}${body}<div style="height:48px"></div>`;
+    </div>${dayNav}</div>${body}<div style="height:48px"></div>`;
 }
 
 /* ── ADMIN ───────────────────────────────── */
@@ -1661,36 +1673,66 @@ function toast(msg){
 /* ════════════════════════════════════════════
    EVENTS
 ════════════════════════════════════════════ */
+function _getScroller(){
+  return isDesktop() ? document.getElementById('main') : window;
+}
+
 function scrollToDate(date){
   const el=document.querySelector(`[data-date="${date}"]`);
-  if(el) el.scrollIntoView({behavior:'instant',block:'start'});
+  if(!el) return;
+  const sh=document.querySelector('.p-sticky-header');
+  const shH=sh ? sh.offsetHeight : 0;
+  if(isDesktop()){
+    const main=document.getElementById('main');
+    const mainRect=main.getBoundingClientRect();
+    main.scrollTop=main.scrollTop+(el.getBoundingClientRect().top-mainRect.top)-shH;
+  } else {
+    const y=window.scrollY+el.getBoundingClientRect().top-56-44-shH;
+    window.scrollTo({top:Math.max(0,y),behavior:'instant'});
+  }
 }
 
 function scrollToToday(){
   const today=new Date().toISOString().slice(0,10);
   const all=[...document.querySelectorAll('[data-date]')];
-  const el=all.find(e=>e.dataset.date>=today)||null;
-  if(el) el.scrollIntoView({behavior:'instant',block:'start'});
+  const el=all.find(e=>e.dataset.date>=today)||all[all.length-1]||null;
+  if(el) scrollToDate(el.dataset.date);
 }
 
-let _dayObserver=null;
-function setupDayNav(){
-  if(_dayObserver){ _dayObserver.disconnect(); _dayObserver=null; }
-  const blocks=document.querySelectorAll('[data-date]');
+let _dayListener=null, _dayListenerEl=null, _lastActiveDay=null;
+
+function _updateActiveDay(){
+  const blocks=[...document.querySelectorAll('[data-date]')];
   if(!blocks.length) return;
-  function setActive(date){
-    document.querySelectorAll('.p-day-btn').forEach(b=>{
-      b.classList.toggle('on',b.dataset.goto===date);
-    });
-    const active=document.querySelector(`.p-day-btn[data-goto="${date}"]`);
-    if(active) active.scrollIntoView({behavior:'smooth',block:'nearest',inline:'center'});
+  const sh=document.querySelector('.p-sticky-header');
+  const threshold=(sh ? sh.getBoundingClientRect().bottom : 110)+10;
+  let activeDate=blocks[0].dataset.date;
+  for(const b of blocks){
+    if(b.getBoundingClientRect().top<=threshold) activeDate=b.dataset.date;
+    else break;
   }
-  _dayObserver=new IntersectionObserver(entries=>{
-    entries.forEach(entry=>{
-      if(entry.isIntersecting) setActive(entry.target.dataset.date);
-    });
-  },{threshold:0, rootMargin:'-20% 0px -79% 0px'});
-  blocks.forEach(b=>_dayObserver.observe(b));
+  if(activeDate===_lastActiveDay) return;
+  _lastActiveDay=activeDate;
+  document.querySelectorAll('.p-day-btn').forEach(b=>{
+    b.classList.toggle('on',b.dataset.goto===activeDate);
+  });
+  const active=document.querySelector(`.p-day-btn[data-goto="${activeDate}"]`);
+  if(active) active.scrollIntoView({behavior:'smooth',block:'nearest',inline:'center'});
+}
+
+function _teardownDayNav(){
+  if(_dayListener && _dayListenerEl){
+    _dayListenerEl.removeEventListener('scroll',_dayListener);
+    _dayListener=null; _dayListenerEl=null; _lastActiveDay=null;
+  }
+}
+
+function setupDayNav(){
+  _teardownDayNav();
+  if(!document.querySelectorAll('[data-date]').length) return;
+  _dayListener=_updateActiveDay;
+  _dayListenerEl=_getScroller();
+  _dayListenerEl.addEventListener('scroll',_dayListener,{passive:true});
 }
 
 document.getElementById('tabbar').addEventListener('click',e=>{
@@ -1700,7 +1742,7 @@ document.getElementById('tabbar').addEventListener('click',e=>{
   document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.v===S.view));
   render();
   if(S.view==='partidos'){ scrollToToday(); setupDayNav(); }
-  else if(_dayObserver){ _dayObserver.disconnect(); _dayObserver=null; }
+  else _teardownDayNav();
 });
 
 document.getElementById('ubtn').addEventListener('click', openUM);
@@ -1721,11 +1763,11 @@ document.getElementById('main').addEventListener('click',e=>{
 
   /* Partidos filter pills */
   const pp=e.target.closest('.p-pill');
-  if(pp){ S.predF=pp.dataset.pf; render(); setupDayNav(); return; }
+  if(pp){ S.predF=pp.dataset.pf; render(); scrollToToday(); setupDayNav(); return; }
 
   /* View mode toggle */
   const vt=e.target.closest('.p-vtab');
-  if(vt){ S.viewMode=vt.dataset.vm; render(); setupDayNav(); return; }
+  if(vt){ S.viewMode=vt.dataset.vm; render(); scrollToToday(); setupDayNav(); return; }
 
   /* Day nav button */
   const db=e.target.closest('.p-day-btn');
@@ -1816,7 +1858,13 @@ document.addEventListener('keydown',e=>{
 });
 
 let _resizeT;
-window.addEventListener('resize',()=>{ clearTimeout(_resizeT); _resizeT=setTimeout(render,150); });
+window.addEventListener('resize',()=>{
+  clearTimeout(_resizeT);
+  _resizeT=setTimeout(()=>{
+    render();
+    if(S.view==='partidos'){ setupDayNav(); }
+  },150);
+});
 
 /* ════════════════════════════════════════════
    INIT
@@ -1825,7 +1873,7 @@ window.addEventListener('resize',()=>{ clearTimeout(_resizeT); _resizeT=setTimeo
   await hydrate();
   _prevHash = JSON.stringify({ users:S.users, predictions:S.predictions, results:S.results, adminPass:S.adminPass });
   render();
-  if(S.view==='partidos') setTimeout(()=>{ scrollToToday(); setupDayNav(); }, 0);
+  if(S.view==='partidos') setTimeout(()=>{ scrollToToday(); setupDayNav(); },50);
   if(!S.users.length) setTimeout(openUM, 250);
   setInterval(autoRefresh, 30000);
 })();
