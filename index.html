@@ -133,15 +133,16 @@ body {
   flex-shrink: 0;
   display: flex; align-items: center; gap: 6px;
   font-family: var(--f); font-size: 12px; font-weight: 600;
-  color: var(--ink); background: none;
-  border: 1px solid var(--border); border-radius: 20px;
-  padding: 7px 13px; cursor: pointer;
+  color: var(--ink2); background: none;
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 6px 12px; cursor: pointer;
   transition: all 0.13s; white-space: nowrap;
   margin-bottom: 2px;
 }
-.t-share-btn:hover { background: var(--surface); border-color: var(--ink2); }
+.t-share-btn:hover { background: var(--surface); border-color: var(--ink2); color: var(--ink); }
 .t-share-btn:active { background: var(--border); }
 .t-share-btn svg { flex-shrink: 0; }
+.t-share-btn .share-label { display: inline; }
 
 /* Chart */
 .chart-wrap {
@@ -798,6 +799,21 @@ body {
     min-height: unset;
   }
   #tab-tabla { display: none; }
+  /* Sidebar tabla: compact layout */
+  #sidebar .t-title { font-size: 24px; letter-spacing: -0.02em; }
+  #sidebar .t-head { padding: 16px 16px 12px; }
+  #sidebar .t-meta { font-size: 12px; margin-top: 4px; }
+  #sidebar .t-share-btn { padding: 5px 8px; border-radius: 6px; gap: 0; }
+  #sidebar .t-share-btn .share-label { display: none; }
+  #sidebar .lb-row { padding: 12px 16px; }
+  #sidebar .lb-name { font-size: 16px; }
+  #sidebar .lb-pts { font-size: 24px; }
+  #sidebar .lb-exp { padding: 10px 16px 14px; }
+  #sidebar .exp-n { font-size: 24px; }
+  #sidebar .exp-cell { padding: 10px 6px; }
+  #sidebar .chart-wrap { padding: 14px 16px 10px; }
+  #sidebar .score-rules { margin: 14px 16px 0; }
+  #sidebar .lb { padding-bottom: 24px; }
   .p-pills { flex-wrap: wrap; overflow-x: visible; scrollbar-width: auto; }
   .p-pills::-webkit-scrollbar { display: block; height: 3px; }
   .p-pills::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
@@ -1225,9 +1241,9 @@ function vTabla(){
           <div class="t-title">Clasificación</div>
           <div class="t-meta">${played} de ${MATCHES.length} partidos jugados</div>
         </div>
-        <button class="t-share-btn" id="share-btn">
+        <button class="t-share-btn" id="share-btn" title="Compartir clasificación">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          Compartir
+          <span class="share-label">Compartir</span>
         </button>
       </div>
       ${renderChart(r)}
