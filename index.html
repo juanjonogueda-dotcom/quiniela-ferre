@@ -741,6 +741,22 @@ body {
 }
 #toast.on { opacity: 1; transform: translateX(-50%) translateY(0); }
 
+/* ── SYNC DOT ─────────────────────────────── */
+#sync-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: transparent;
+  flex-shrink: 0; margin-left: 8px;
+  transition: background 0.3s;
+}
+#sync-dot.syncing {
+  background: #4ade80;
+  animation: syncPulse 0.9s ease-in-out infinite;
+}
+@keyframes syncPulse {
+  0%,100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.4; transform: scale(0.7); }
+}
+
 /* ── UTILITY ──────────────────────────────── */
 .hidden { display: none !important; }
 
@@ -806,6 +822,7 @@ body {
     <div class="hdr-brand">
       <span class="hdr-wordmark">Mundial</span>
       <span class="hdr-yr">2026</span>
+      <div id="sync-dot"></div>
     </div>
     <div class="hdr-user" id="ubtn">
       <div class="hdr-udot" id="udot"></div>
@@ -966,6 +983,13 @@ const MATCHES = [
 ];
 
 /* ════════════════════════════════════════════
+   JSONBIN BACKEND
+════════════════════════════════════════════ */
+const BIN_ID  = '6a30badfda38895dfec7466f';
+const API_KEY = '$2a$10$iLiM9MM5JlY.Er0SDksVlu2iaS0YxXSEBIWHoDNWUA9hxAQLou3qO';
+const BIN_URL = `https://api.jsonbin.io/v3/b/${BIN_ID}`;
+
+/* ════════════════════════════════════════════
    STATE
 ════════════════════════════════════════════ */
 const COLORS = [
@@ -982,21 +1006,69 @@ let S = {
   predF:'all', viewMode:'me', expUid:null, pm:null
 };
 
-function persist() {
-  localStorage.setItem('wc26q2', JSON.stringify({
-    users:S.users, predictions:S.predictions,
-    results:S.results, adminPass:S.adminPass
-  }));
-}
-function hydrate() {
+function syncDot(on){ document.getElementById('sync-dot').classList.toggle('syncing',on); }
+
+async function persist() {
+  const data = { users:S.users, predictions:S.predictions, results:S.results, adminPass:S.adminPass };
+  localStorage.setItem('wc26q2_bk', JSON.stringify(data));
+  syncDot(true);
   try {
-    const d = JSON.parse(localStorage.getItem('wc26q2')||'{}');
+    await fetch(BIN_URL, {
+      method:'PUT',
+      headers:{ 'Content-Type':'application/json', 'X-Master-Key': API_KEY },
+      body: JSON.stringify(data)
+    });
+  } catch(e) { toast('Sin conexión — guardado local'); }
+  finally { syncDot(false); }
+}
+
+async function hydrate() {
+  syncDot(true);
+  try {
+    const res = await fetch(`${BIN_URL}/latest`, { headers:{ 'X-Master-Key': API_KEY } });
+    if (!res.ok) throw new Error(res.status);
+    const json = await res.json();
+    const d = json.record || {};
     S.users       = d.users       || [];
     S.predictions = d.predictions || {};
     S.results     = d.results     || {};
     S.adminPass   = d.adminPass   || 'mundial2026';
-    if (S.users.length) S.cur = S.users[0].id;
+    if (S.users.length && !S.cur) S.cur = S.users[0].id;
+    localStorage.setItem('wc26q2_bk', JSON.stringify(d));
+  } catch(e) {
+    try {
+      const d = JSON.parse(localStorage.getItem('wc26q2_bk') || localStorage.getItem('wc26q2') || '{}');
+      S.users       = d.users       || [];
+      S.predictions = d.predictions || {};
+      S.results     = d.results     || {};
+      S.adminPass   = d.adminPass   || 'mundial2026';
+      if (S.users.length && !S.cur) S.cur = S.users[0].id;
+    } catch(e2) {}
+  } finally { syncDot(false); }
+}
+
+let _prevHash = '';
+async function autoRefresh() {
+  syncDot(true);
+  try {
+    const res = await fetch(`${BIN_URL}/latest`, { headers:{ 'X-Master-Key': API_KEY } });
+    if (!res.ok) return;
+    const json = await res.json();
+    const d = json.record || {};
+    const hash = JSON.stringify(d);
+    if (hash !== _prevHash) {
+      _prevHash = hash;
+      const cur = S.cur;
+      S.users       = d.users       || [];
+      S.predictions = d.predictions || {};
+      S.results     = d.results     || {};
+      S.adminPass   = d.adminPass   || 'mundial2026';
+      S.cur = cur;
+      localStorage.setItem('wc26q2_bk', JSON.stringify(d));
+      render();
+    }
   } catch(e) {}
+  finally { syncDot(false); }
 }
 
 /* ════════════════════════════════════════════
@@ -1583,9 +1655,13 @@ window.addEventListener('resize',()=>{ clearTimeout(_resizeT); _resizeT=setTimeo
 /* ════════════════════════════════════════════
    INIT
 ════════════════════════════════════════════ */
-hydrate();
-render();
-if(!S.users.length) setTimeout(openUM, 250);
+(async () => {
+  await hydrate();
+  _prevHash = JSON.stringify({ users:S.users, predictions:S.predictions, results:S.results, adminPass:S.adminPass });
+  render();
+  if(!S.users.length) setTimeout(openUM, 250);
+  setInterval(autoRefresh, 30000);
+})();
 </script>
 </body>
 </html>
