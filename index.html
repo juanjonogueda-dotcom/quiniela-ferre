@@ -346,19 +346,29 @@ body {
 
 /* Day heading */
 .day-hdr {
-  position: sticky; top: 56px; z-index: 10;
   padding: 14px 20px 6px;
-  background: var(--bg);
   font-family: var(--f); font-size: 12px; font-weight: 600;
   color: var(--muted);
-  display: flex; align-items: center; gap: 7px;
 }
-.day-hdr-today { color: var(--ink); }
-.day-today-badge {
-  font-family: var(--f); font-size: 10px; font-weight: 700;
-  color: #fff; background: var(--ink);
-  border-radius: 10px; padding: 1px 7px; letter-spacing: 0.03em;
+
+/* Day navigator (partidos only) */
+.p-day-nav {
+  display: flex; gap: 5px; overflow-x: auto;
+  scrollbar-width: none;
+  padding: 8px 20px;
+  border-bottom: 1px solid var(--border);
 }
+.p-day-nav::-webkit-scrollbar { display: none; }
+.p-day-btn {
+  font-family: var(--f); font-size: 12px; font-weight: 500;
+  color: var(--muted); background: none;
+  border: 1px solid var(--border); border-radius: 20px;
+  padding: 5px 11px; cursor: pointer; white-space: nowrap;
+  flex-shrink: 0; transition: all 0.12s;
+}
+.p-day-btn.on { background: var(--ink); border-color: var(--ink); color: #fff; font-weight: 700; }
+.p-day-btn:hover:not(.on) { border-color: var(--ink2); color: var(--ink2); }
+.p-day-btn.today:not(.on) { border-color: var(--ink); color: var(--ink); }
 
 /* Match row — Mi quiniela */
 .m-row {
@@ -1346,15 +1356,24 @@ function vPartidos(){
   const byDate={};
   ms.forEach(m=>{ (byDate[m.date]=byDate[m.date]||[]).push(m); });
 
+  const todayStr=new Date().toISOString().slice(0,10);
+  const sortedDates=Object.keys(byDate).sort();
+  const dayNav=sortedDates.length ? `<div class="p-day-nav" id="p-day-nav">${
+    sortedDates.map(date=>{
+      const d=new Date(date+'T12:00:00Z');
+      const ds=d.toLocaleDateString('es-MX',{weekday:'short',day:'numeric',timeZone:'UTC'});
+      const isToday=date===todayStr;
+      return `<button class="p-day-btn${isToday?' on today':''}" data-goto="${date}">${ds}</button>`;
+    }).join('')
+  }</div>` : '';
+
   let body='';
 
-  const todayStr=new Date().toISOString().slice(0,10);
   if(vm==='me'){
     /* ── MI QUINIELA ── */
     const secs=Object.entries(byDate).sort().map(([date,dm])=>{
       const d=new Date(date+'T12:00:00Z');
       const ds=d.toLocaleDateString('es-MX',{weekday:'short',day:'numeric',month:'short',timeZone:'UTC'});
-      const isToday=date===todayStr;
       const mrows=dm.map(m=>{
         const r=S.results[m.id], p=S.predictions[`${uid}_${m.id}`];
         let right='';
@@ -1384,10 +1403,7 @@ function vPartidos(){
           <div class="m-right">${right}</div>
         </div>`;
       }).join('');
-      const hdrHtml=isToday
-        ? `<div class="day-hdr day-hdr-today"><span>${ds}</span><span class="day-today-badge">Hoy</span></div>`
-        : `<div class="day-hdr">${ds}</div>`;
-      return `<div data-date="${date}">${hdrHtml}${mrows}</div>`;
+      return `<div data-date="${date}"><div class="day-hdr">${ds}</div>${mrows}</div>`;
     }).join('');
     body=secs||`<div class="empty">
       <div class="empty-icon">✓</div>
@@ -1399,7 +1415,6 @@ function vPartidos(){
     const secs=Object.entries(byDate).sort().map(([date,dm])=>{
       const d=new Date(date+'T12:00:00Z');
       const ds=d.toLocaleDateString('es-MX',{weekday:'short',day:'numeric',month:'short',timeZone:'UTC'});
-      const isToday=date===todayStr;
       const mblocks=dm.map(m=>{
         const r=S.results[m.id];
         const tag=m.g?`Grupo ${m.g}`:(PH[m.ph]||'');
@@ -1447,10 +1462,7 @@ function vPartidos(){
           ${S.users.length ? `<div class="m-all-preds">${predRows}${addBtn}</div>` : ''}
         </div>`;
       }).join('');
-      const hdrHtml=isToday
-        ? `<div class="day-hdr day-hdr-today"><span>${ds}</span><span class="day-today-badge">Hoy</span></div>`
-        : `<div class="day-hdr">${ds}</div>`;
-      return `<div data-date="${date}">${hdrHtml}${mblocks}</div>`;
+      return `<div data-date="${date}"><div class="day-hdr">${ds}</div>${mblocks}</div>`;
     }).join('');
     body=secs||`<div class="empty">
       <div class="empty-icon">✓</div>
@@ -1466,7 +1478,7 @@ function vPartidos(){
         <button class="p-vtab${vm==='all'?' on':''}" data-vm="all">Todos</button>
       </div>
       <div class="p-pills">${pills}</div>
-    </div>${body}<div style="height:48px"></div>`;
+    </div>${dayNav}${body}<div style="height:48px"></div>`;
 }
 
 /* ── ADMIN ───────────────────────────────── */
@@ -1649,14 +1661,36 @@ function toast(msg){
 /* ════════════════════════════════════════════
    EVENTS
 ════════════════════════════════════════════ */
+function scrollToDate(date){
+  const el=document.querySelector(`[data-date="${date}"]`);
+  if(el) el.scrollIntoView({behavior:'instant',block:'start'});
+}
+
 function scrollToToday(){
   const today=new Date().toISOString().slice(0,10);
-  let el=document.querySelector(`[data-date="${today}"]`);
-  if(!el){
-    const all=[...document.querySelectorAll('[data-date]')];
-    el=all.find(e=>e.dataset.date>=today)||null;
-  }
+  const all=[...document.querySelectorAll('[data-date]')];
+  const el=all.find(e=>e.dataset.date>=today)||null;
   if(el) el.scrollIntoView({behavior:'instant',block:'start'});
+}
+
+let _dayObserver=null;
+function setupDayNav(){
+  if(_dayObserver){ _dayObserver.disconnect(); _dayObserver=null; }
+  const blocks=document.querySelectorAll('[data-date]');
+  if(!blocks.length) return;
+  function setActive(date){
+    document.querySelectorAll('.p-day-btn').forEach(b=>{
+      b.classList.toggle('on',b.dataset.goto===date);
+    });
+    const active=document.querySelector(`.p-day-btn[data-goto="${date}"]`);
+    if(active) active.scrollIntoView({behavior:'smooth',block:'nearest',inline:'center'});
+  }
+  _dayObserver=new IntersectionObserver(entries=>{
+    entries.forEach(entry=>{
+      if(entry.isIntersecting) setActive(entry.target.dataset.date);
+    });
+  },{threshold:0, rootMargin:'-20% 0px -79% 0px'});
+  blocks.forEach(b=>_dayObserver.observe(b));
 }
 
 document.getElementById('tabbar').addEventListener('click',e=>{
@@ -1665,7 +1699,8 @@ document.getElementById('tabbar').addEventListener('click',e=>{
   S.view=b.dataset.v;
   document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.v===S.view));
   render();
-  if(S.view==='partidos') scrollToToday();
+  if(S.view==='partidos'){ scrollToToday(); setupDayNav(); }
+  else if(_dayObserver){ _dayObserver.disconnect(); _dayObserver=null; }
 });
 
 document.getElementById('ubtn').addEventListener('click', openUM);
@@ -1686,11 +1721,15 @@ document.getElementById('main').addEventListener('click',e=>{
 
   /* Partidos filter pills */
   const pp=e.target.closest('.p-pill');
-  if(pp){ S.predF=pp.dataset.pf; render(); return; }
+  if(pp){ S.predF=pp.dataset.pf; render(); setupDayNav(); return; }
 
   /* View mode toggle */
   const vt=e.target.closest('.p-vtab');
-  if(vt){ S.viewMode=vt.dataset.vm; render(); return; }
+  if(vt){ S.viewMode=vt.dataset.vm; render(); setupDayNav(); return; }
+
+  /* Day nav button */
+  const db=e.target.closest('.p-day-btn');
+  if(db){ scrollToDate(db.dataset.goto); return; }
 
   /* Match row — mi quiniela */
   const mr=e.target.closest('.m-row');
@@ -1786,7 +1825,7 @@ window.addEventListener('resize',()=>{ clearTimeout(_resizeT); _resizeT=setTimeo
   await hydrate();
   _prevHash = JSON.stringify({ users:S.users, predictions:S.predictions, results:S.results, adminPass:S.adminPass });
   render();
-  if(S.view==='partidos') setTimeout(scrollToToday, 0);
+  if(S.view==='partidos') setTimeout(()=>{ scrollToToday(); setupDayNav(); }, 0);
   if(!S.users.length) setTimeout(openUM, 250);
   setInterval(autoRefresh, 30000);
 })();
