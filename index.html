@@ -1652,11 +1652,24 @@ function shareTabla(){
     scale:2,
     useCORS:true,
     logging:false
-  }).then(canvas=>{
+  }).then(async canvas=>{
     if(btn){ btn.style.display=''; }
     const date=new Date().toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit',year:'numeric'}).replace(/\//g,'-');
+    const filename=`quiniela-mundial-${date}.png`;
+    if(navigator.share && navigator.canShare){
+      try{
+        const blob=await new Promise(res=>canvas.toBlob(res,'image/png'));
+        const file=new File([blob],filename,{type:'image/png'});
+        if(navigator.canShare({files:[file]})){
+          await navigator.share({files:[file],title:'Quiniela Mundial'});
+          return;
+        }
+      }catch(err){
+        if(err.name==='AbortError') return;
+      }
+    }
     const a=document.createElement('a');
-    a.download=`quiniela-mundial-${date}.png`;
+    a.download=filename;
     a.href=canvas.toDataURL('image/png');
     a.click();
     toast('Imagen guardada');
