@@ -1150,7 +1150,11 @@ function mergeEntries(remote, local, tomb){
   const a=remote||{}, b=local||{}, out={};
   for(const k of new Set([...Object.keys(a),...Object.keys(b)])){
     const ra=a[k], rb=b[k];
-    out[k] = !ra ? rb : !rb ? ra : ((rb.t||0) >= (ra.t||0) ? rb : ra);
+    if(!ra){ out[k]=rb; }
+    else if(!rb){ out[k]=ra; }
+    else if((rb.t||0) > (ra.t||0)){ out[k]=rb; }
+    else if((ra.t||0) > (rb.t||0)){ out[k]=ra; }
+    else { out[k] = stable(ra) >= stable(rb) ? ra : rb; }  // tie: deterministic
   }
   for(const k in tomb){ if(out[k] && tomb[k] >= (out[k].t||0)) delete out[k]; }
   return out;
@@ -1232,6 +1236,7 @@ async function hydrate(){
 let _lastStable='';
 async function autoRefresh(){
   if(_persisting) return;            // never fight an in-flight write
+  if(document.hidden) return;        // don't poll a backgrounded tab (saves quota)
   syncDot(true);
   try{
     const rec=await fetchRecord();
@@ -1970,6 +1975,10 @@ window.addEventListener('resize',()=>{
   if(S.view==='partidos') setTimeout(()=>{ scrollToToday(); setupDayNav(); },50);
   if(!S.users.length) setTimeout(openUM, 250);
   setInterval(autoRefresh, 30000);
+  // Sync as soon as the tab regains focus or connectivity (also flushes any
+  // edits that only made it to localStorage while offline).
+  document.addEventListener('visibilitychange',()=>{ if(!document.hidden) autoRefresh(); });
+  window.addEventListener('online', autoRefresh);
 })();
 </script>
 </body>
