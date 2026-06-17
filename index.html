@@ -1103,7 +1103,7 @@ const PH = { groups:'Grupos', r32:'Octavos', r16:'Cuartos', qf:'Semis', sf:'Fina
 
 let S = {
   users:[], predictions:{}, results:{},
-  deleted:{},
+  deleted:{}, deletedUsers:{}, deletedResults:{},
   cur:null, adminOn:false, view:'tabla',
   adminPass:'mundial2026',
   predF:'all', viewMode:'me', expUid:null, pm:null
@@ -1113,88 +1113,137 @@ function syncDot(on){ document.getElementById('sync-dot').classList.toggle('sync
 
 /* Snapshot of the data we persist remotely / locally. */
 function snapshot(){
-  return { users:S.users, predictions:S.predictions, results:S.results, deleted:S.deleted, adminPass:S.adminPass };
+  return {
+    users:S.users, predictions:S.predictions, results:S.results,
+    deleted:S.deleted, deletedUsers:S.deletedUsers, deletedResults:S.deletedResults,
+    adminPass:S.adminPass
+  };
+}
+function saveLocal(){ try{ localStorage.setItem('wc26q2_bk', JSON.stringify(snapshot())); }catch(e){} }
+
+/* Deterministic JSON (sorted keys) used only to detect real changes. */
+function stable(v){
+  if(Array.isArray(v)) return '['+v.map(stable).join(',')+']';
+  if(v && typeof v==='object') return '{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+stable(v[k])).join(',')+'}';
+  return JSON.stringify(v);
+}
+/* Normalised, comparable shape of a record (users sorted by id). */
+function normRec(r){
+  r = r || {};
+  return {
+    users:(r.users||[]).slice().sort((a,b)=>a.id<b.id?-1:a.id>b.id?1:0),
+    predictions:r.predictions||{}, results:r.results||{},
+    deleted:r.deleted||{}, deletedUsers:r.deletedUsers||{}, deletedResults:r.deletedResults||{},
+    adminPass:r.adminPass||'mundial2026'
+  };
 }
 
-/* Apply deletion tombstones so a deleted prediction is never resurrected.
-   Merges the incoming `deleted` map with the local one, then strips any
-   tombstoned key from predictions. Local tombstones win, so a deletion that
-   has not yet reached the server still survives an autoRefresh/hydrate. */
-function applyTombstones(d){
-  S.deleted = Object.assign({}, d.deleted || {}, S.deleted || {});
-  for (const k in S.deleted) delete S.predictions[k];
+/* Union two tombstone maps, keeping the newest timestamp per key. */
+function mergeTomb(a,b){
+  const out=Object.assign({},a||{}), o=b||{};
+  for(const k in o) out[k]=Math.max(out[k]||0, o[k]||0);
+  return out;
+}
+/* Per-key last-write-wins union of two {key:{...,t}} maps, then drop any key
+   whose tombstone is at least as new as the surviving entry. */
+function mergeEntries(remote, local, tomb){
+  const a=remote||{}, b=local||{}, out={};
+  for(const k of new Set([...Object.keys(a),...Object.keys(b)])){
+    const ra=a[k], rb=b[k];
+    out[k] = !ra ? rb : !rb ? ra : ((rb.t||0) >= (ra.t||0) ? rb : ra);
+  }
+  for(const k in tomb){ if(out[k] && tomb[k] >= (out[k].t||0)) delete out[k]; }
+  return out;
 }
 
-async function persist() {
-  const data = snapshot();
-  localStorage.setItem('wc26q2_bk', JSON.stringify(data));
+/* Reconcile a remote/stored record into S with last-write-wins per key.
+   The merge is additive: predictions/results/users present on either side are
+   kept, and a tombstone removes an entry only when it is newer than that entry.
+   This is what stops concurrent edits on different devices from overwriting
+   one another (the cause of predictions vanishing). */
+function mergeRecord(rec){
+  const r=rec||{};
+  S.deleted        = mergeTomb(r.deleted,        S.deleted);
+  S.deletedUsers   = mergeTomb(r.deletedUsers,   S.deletedUsers);
+  S.deletedResults = mergeTomb(r.deletedResults, S.deletedResults);
+
+  S.predictions = mergeEntries(r.predictions, S.predictions, S.deleted);
+  S.results     = mergeEntries(r.results,     S.results,     S.deletedResults);
+
+  const byId={};
+  (r.users||[]).forEach(u=>{ byId[u.id]=u; });
+  (S.users||[]).forEach(u=>{ byId[u.id]=u; });   // local wins on name/colour
+  for(const id in S.deletedUsers) delete byId[id];
+  S.users=Object.values(byId);
+
+  S.adminPass = r.adminPass || S.adminPass || 'mundial2026';
+}
+
+async function fetchRecord(){
+  const res=await fetch(`${BIN_URL}/latest`, { headers:{ 'X-Master-Key': API_KEY } });
+  if(!res.ok) throw new Error(res.status);
+  const json=await res.json();
+  return json.record || {};
+}
+
+/* Persist with read-merge-write so a PUT never clobbers another device's data.
+   Single-flight: calls made while a write is in progress coalesce into one
+   extra pass, so rapid edits batch instead of racing each other. */
+let _persisting=false, _persistAgain=false;
+async function persist(){
+  saveLocal();                       // local backup is immediate and never lost
+  if(_persisting){ _persistAgain=true; return; }
+  _persisting=true; syncDot(true);
+  let failed=false;
+  try{
+    do{
+      _persistAgain=false;
+      try{ mergeRecord(await fetchRecord()); }catch(e){ /* offline read: push what we have */ }
+      saveLocal();
+      const res=await fetch(BIN_URL, {
+        method:'PUT',
+        headers:{ 'Content-Type':'application/json', 'X-Master-Key': API_KEY },
+        body: JSON.stringify(snapshot())
+      });
+      if(!res.ok) throw new Error(res.status);
+    } while(_persistAgain);
+  }catch(e){ failed=true; }
+  finally{ _persisting=false; syncDot(false); }
+  if(failed) toast('Sin conexión — guardado local');
+}
+
+async function hydrate(){
+  try{ mergeRecord(JSON.parse(localStorage.getItem('wc26q2_bk') || localStorage.getItem('wc26q2') || '{}')); }catch(e){}
   syncDot(true);
-  try {
-    await fetch(BIN_URL, {
-      method:'PUT',
-      headers:{ 'Content-Type':'application/json', 'X-Master-Key': API_KEY },
-      body: JSON.stringify(data)
-    });
-  } catch(e) { toast('Sin conexión — guardado local'); }
-  finally { syncDot(false); }
+  try{
+    const rec=await fetchRecord();
+    const remoteStable=stable(normRec(rec));
+    mergeRecord(rec);
+    if(S.cur && !getU(S.cur)) S.cur=null;
+    if(S.users.length && !S.cur) S.cur=S.users[0].id;
+    saveLocal();
+    if(stable(normRec(snapshot()))!==remoteStable) persist();  // push offline changes
+  }catch(e){
+    if(S.cur && !getU(S.cur)) S.cur=null;
+    if(S.users.length && !S.cur) S.cur=S.users[0].id;
+  }finally{ syncDot(false); }
 }
 
-async function hydrate() {
+let _lastStable='';
+async function autoRefresh(){
+  if(_persisting) return;            // never fight an in-flight write
   syncDot(true);
-  try {
-    const res = await fetch(`${BIN_URL}/latest`, { headers:{ 'X-Master-Key': API_KEY } });
-    if (!res.ok) throw new Error(res.status);
-    const json = await res.json();
-    const d = json.record || {};
-    S.users       = d.users       || [];
-    S.predictions = d.predictions || {};
-    S.results     = d.results     || {};
-    S.adminPass   = d.adminPass   || 'mundial2026';
-    applyTombstones(d);
-    if (S.users.length && !S.cur) S.cur = S.users[0].id;
-    localStorage.setItem('wc26q2_bk', JSON.stringify(snapshot()));
-  } catch(e) {
-    try {
-      const d = JSON.parse(localStorage.getItem('wc26q2_bk') || localStorage.getItem('wc26q2') || '{}');
-      S.users       = d.users       || [];
-      S.predictions = d.predictions || {};
-      S.results     = d.results     || {};
-      S.adminPass   = d.adminPass   || 'mundial2026';
-      applyTombstones(d);
-      if (S.users.length && !S.cur) S.cur = S.users[0].id;
-    } catch(e2) {}
-  } finally { syncDot(false); }
-}
-
-let _prevHash = '';
-async function autoRefresh() {
-  syncDot(true);
-  try {
-    const res = await fetch(`${BIN_URL}/latest`, { headers:{ 'X-Master-Key': API_KEY } });
-    if (!res.ok) return;
-    const json = await res.json();
-    const d = json.record || {};
-    const hash = JSON.stringify(d);
-    if (hash !== _prevHash) {
-      _prevHash = hash;
-      const cur = S.cur;
-      S.users       = d.users       || [];
-      S.predictions = d.predictions || {};
-      S.results     = d.results     || {};
-      S.adminPass   = d.adminPass   || 'mundial2026';
-      applyTombstones(d);
-      S.cur = cur;
-      localStorage.setItem('wc26q2_bk', JSON.stringify(snapshot()));
-      // If the server still carried predictions we have already tombstoned
-      // locally, push the cleaned state back so other devices drop them too.
-      if (JSON.stringify(d.predictions||{}) !== JSON.stringify(S.predictions) ||
-          JSON.stringify(d.deleted||{}) !== JSON.stringify(S.deleted)) {
-        persist();
-      }
-      render();
-    }
-  } catch(e) {}
-  finally { syncDot(false); }
+  try{
+    const rec=await fetchRecord();
+    const remoteStable=stable(normRec(rec));
+    mergeRecord(rec);
+    if(S.cur && !getU(S.cur)) S.cur=S.users[0]?.id||null;
+    const localStable=stable(normRec(snapshot()));
+    saveLocal();
+    if(localStable!==remoteStable) persist();   // we hold data the server lacks
+    if(localStable!==_lastStable){ _lastStable=localStable; render(); }
+  }catch(e){}
+  finally{ syncDot(false); }
 }
 
 /* ════════════════════════════════════════════
@@ -1840,16 +1889,18 @@ document.getElementById('main').addEventListener('click',e=>{
     const i2=document.querySelector(`.adm-score[data-mid="${mid}"][data-g="2"]`);
     const g1=parseInt(i1?.value), g2=parseInt(i2?.value);
     if(isNaN(g1)||isNaN(g2)){ toast('Ingresa ambos marcadores'); return; }
-    S.results[mid]={g1,g2}; persist(); render(); toast('Resultado guardado'); return;
+    S.results[mid]={g1,g2,t:Date.now()}; delete S.deletedResults[mid]; persist(); render(); toast('Resultado guardado'); return;
   }
   const cl=e.target.closest('[data-clr]');
-  if(cl){ delete S.results[cl.dataset.clr]; persist(); render(); toast('Resultado eliminado'); return; }
+  if(cl){ const mid=cl.dataset.clr; delete S.results[mid]; S.deletedResults[mid]=Date.now(); persist(); render(); toast('Resultado eliminado'); return; }
 
   const du=e.target.closest('[data-del-uid]');
   if(du){
     const uid=du.dataset.delUid;
+    const now=Date.now();
     S.users=S.users.filter(u=>u.id!==uid);
-    Object.keys(S.predictions).forEach(k=>{ if(k.startsWith(uid+'_')) delete S.predictions[k]; });
+    S.deletedUsers[uid]=now;
+    Object.keys(S.predictions).forEach(k=>{ if(k.startsWith(uid+'_')){ delete S.predictions[k]; S.deleted[k]=now; } });
     if(S.cur===uid) S.cur=S.users[0]?.id||null;
     persist(); render(); toast('Jugador eliminado'); return;
   }
@@ -1867,7 +1918,7 @@ document.getElementById('um-btn').addEventListener('click',()=>{
   if(!name) return;
   if(S.users.length>=16){ toast('Máximo 16 jugadores'); return; }
   const nu={id:genId(), name, color:COLORS[S.users.length%COLORS.length]};
-  S.users.push(nu); S.cur=nu.id;
+  S.users.push(nu); S.cur=nu.id; delete S.deletedUsers[nu.id];
   persist(); closeUM(); render();
 });
 
@@ -1888,7 +1939,7 @@ document.getElementById('pmodal').addEventListener('click',e=>{
   }
   if(e.target.id==='pm-ok'&&S.pm){
     const k=`${S.cur}_${S.pm.mid}`;
-    S.predictions[k]={g1:S.pm.g1,g2:S.pm.g2};
+    S.predictions[k]={g1:S.pm.g1,g2:S.pm.g2,t:Date.now()};
     delete S.deleted[k];
     persist(); closePM(); render(); toast('Predicción guardada'); return;
   }
@@ -1914,7 +1965,7 @@ window.addEventListener('resize',()=>{
 ════════════════════════════════════════════ */
 (async () => {
   await hydrate();
-  _prevHash = JSON.stringify(snapshot());
+  _lastStable = stable(normRec(snapshot()));
   render();
   if(S.view==='partidos') setTimeout(()=>{ scrollToToday(); setupDayNav(); },50);
   if(!S.users.length) setTimeout(openUM, 250);
