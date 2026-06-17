@@ -1103,6 +1103,7 @@ const PH = { groups:'Grupos', r32:'Octavos', r16:'Cuartos', qf:'Semis', sf:'Fina
 
 let S = {
   users:[], predictions:{}, results:{},
+  deleted:{},
   cur:null, adminOn:false, view:'tabla',
   adminPass:'mundial2026',
   predF:'all', viewMode:'me', expUid:null, pm:null
@@ -1110,8 +1111,22 @@ let S = {
 
 function syncDot(on){ document.getElementById('sync-dot').classList.toggle('syncing',on); }
 
+/* Snapshot of the data we persist remotely / locally. */
+function snapshot(){
+  return { users:S.users, predictions:S.predictions, results:S.results, deleted:S.deleted, adminPass:S.adminPass };
+}
+
+/* Apply deletion tombstones so a deleted prediction is never resurrected.
+   Merges the incoming `deleted` map with the local one, then strips any
+   tombstoned key from predictions. Local tombstones win, so a deletion that
+   has not yet reached the server still survives an autoRefresh/hydrate. */
+function applyTombstones(d){
+  S.deleted = Object.assign({}, d.deleted || {}, S.deleted || {});
+  for (const k in S.deleted) delete S.predictions[k];
+}
+
 async function persist() {
-  const data = { users:S.users, predictions:S.predictions, results:S.results, adminPass:S.adminPass };
+  const data = snapshot();
   localStorage.setItem('wc26q2_bk', JSON.stringify(data));
   syncDot(true);
   try {
@@ -1135,8 +1150,9 @@ async function hydrate() {
     S.predictions = d.predictions || {};
     S.results     = d.results     || {};
     S.adminPass   = d.adminPass   || 'mundial2026';
+    applyTombstones(d);
     if (S.users.length && !S.cur) S.cur = S.users[0].id;
-    localStorage.setItem('wc26q2_bk', JSON.stringify(d));
+    localStorage.setItem('wc26q2_bk', JSON.stringify(snapshot()));
   } catch(e) {
     try {
       const d = JSON.parse(localStorage.getItem('wc26q2_bk') || localStorage.getItem('wc26q2') || '{}');
@@ -1144,6 +1160,7 @@ async function hydrate() {
       S.predictions = d.predictions || {};
       S.results     = d.results     || {};
       S.adminPass   = d.adminPass   || 'mundial2026';
+      applyTombstones(d);
       if (S.users.length && !S.cur) S.cur = S.users[0].id;
     } catch(e2) {}
   } finally { syncDot(false); }
@@ -1165,8 +1182,15 @@ async function autoRefresh() {
       S.predictions = d.predictions || {};
       S.results     = d.results     || {};
       S.adminPass   = d.adminPass   || 'mundial2026';
+      applyTombstones(d);
       S.cur = cur;
-      localStorage.setItem('wc26q2_bk', JSON.stringify(d));
+      localStorage.setItem('wc26q2_bk', JSON.stringify(snapshot()));
+      // If the server still carried predictions we have already tombstoned
+      // locally, push the cleaned state back so other devices drop them too.
+      if (JSON.stringify(d.predictions||{}) !== JSON.stringify(S.predictions) ||
+          JSON.stringify(d.deleted||{}) !== JSON.stringify(S.deleted)) {
+        persist();
+      }
       render();
     }
   } catch(e) {}
@@ -1857,11 +1881,15 @@ document.getElementById('pmodal').addEventListener('click',e=>{
     document.getElementById(`pm-${t}`).textContent=S.pm[t]; return;
   }
   if(e.target.id==='pm-del'&&S.pm){
-    delete S.predictions[`${S.cur}_${S.pm.mid}`];
+    const k=`${S.cur}_${S.pm.mid}`;
+    delete S.predictions[k];
+    S.deleted[k]=Date.now();
     persist(); closePM(); render(); toast('Predicción eliminada'); return;
   }
   if(e.target.id==='pm-ok'&&S.pm){
-    S.predictions[`${S.cur}_${S.pm.mid}`]={g1:S.pm.g1,g2:S.pm.g2};
+    const k=`${S.cur}_${S.pm.mid}`;
+    S.predictions[k]={g1:S.pm.g1,g2:S.pm.g2};
+    delete S.deleted[k];
     persist(); closePM(); render(); toast('Predicción guardada'); return;
   }
 });
@@ -1886,7 +1914,7 @@ window.addEventListener('resize',()=>{
 ════════════════════════════════════════════ */
 (async () => {
   await hydrate();
-  _prevHash = JSON.stringify({ users:S.users, predictions:S.predictions, results:S.results, adminPass:S.adminPass });
+  _prevHash = JSON.stringify(snapshot());
   render();
   if(S.view==='partidos') setTimeout(()=>{ scrollToToday(); setupDayNav(); },50);
   if(!S.users.length) setTimeout(openUM, 250);
