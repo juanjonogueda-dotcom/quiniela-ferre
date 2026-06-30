@@ -784,6 +784,56 @@ body {
   border: 1px solid var(--border); border-radius: 4px;
   padding: 1px 5px;
 }
+/* Penalty winner badge in match list */
+.pen-tag {
+  font-family: var(--f); font-size: 10px; font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #fff; background: var(--ink2);
+  border-radius: 4px; padding: 1px 5px;
+}
+
+/* Penalty picker in prediction modal */
+.pm-pen-row {
+  display: none;
+  padding: 0 22px 14px;
+}
+.pm-pen-row.visible { display: block; }
+.pm-pen-lbl {
+  font-family: var(--f); font-size: 11px; font-weight: 600;
+  color: var(--muted); text-align: center; margin-bottom: 8px;
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.pm-pen-btns { display: flex; gap: 8px; }
+.pm-pen-btn {
+  flex: 1; padding: 10px 8px;
+  font-family: var(--f); font-size: 13px; font-weight: 600;
+  color: var(--ink); background: var(--surface);
+  border: 1.5px solid var(--border); border-radius: 8px;
+  cursor: pointer; transition: all 0.15s;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pm-pen-btn:hover { border-color: var(--ink2); color: var(--ink2); }
+.pm-pen-btn.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+
+/* Penalty selector in admin */
+.adm-pen-row {
+  width: 100%; display: flex; align-items: center; gap: 6px;
+  padding: 2px 0 4px;
+}
+.adm-pen-lbl {
+  font-family: var(--f); font-size: 11px; font-weight: 600;
+  color: var(--muted); flex-shrink: 0;
+}
+.adm-pen-btn {
+  font-family: var(--f); font-size: 11px; font-weight: 600;
+  color: var(--ink2); background: none;
+  border: 1px solid var(--border); border-radius: 4px;
+  padding: 3px 8px; cursor: pointer; transition: all 0.12s;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 110px;
+}
+.adm-pen-btn:hover { border-color: var(--ink2); }
+.adm-pen-btn.on { background: var(--ink); color: #fff; border-color: var(--ink); }
 
 /* Result block in pred modal */
 .pm-res {
@@ -1281,14 +1331,17 @@ async function autoRefresh(){
    SCORING
 ════════════════════════════════════════════ */
 function oc(a,b){ return a>b?'H':a<b?'A':'D'; }
+function isKO(ph){ return ph!=='groups'; }
 
 function mPts(mid, uid) {
+  const m=MATCHES.find(x=>x.id===mid);
   const r=S.results[mid], p=S.predictions[`${uid}_${mid}`];
   if(!r||!p) return -1;
   const [ra,rb,pa,pb]=[+r.g1,+r.g2,+p.g1,+p.g2];
   if([ra,rb,pa,pb].some(isNaN)) return 0;
-  if(ra===pa&&rb===pb) return 5;
-  if(oc(ra,rb)===oc(pa,pb)) return 2;
+  const penBonus=(m&&isKO(m.ph)&&r.pen&&p.pen&&r.pen===p.pen)?1:0;
+  if(ra===pa&&rb===pb) return 5+penBonus;
+  if(oc(ra,rb)===oc(pa,pb)) return 2+penBonus;
   return 0;
 }
 
@@ -1298,7 +1351,7 @@ function uStats(uid) {
     const r=S.results[m.id], p=S.predictions[`${uid}_${m.id}`];
     if(p) pd++;
     if(r){ pl++; const x=mPts(m.id,uid);
-      if(x===5){pts+=5;ex++;} else if(x===2){pts+=2;re++;} else if(x===0) wr++;
+      if(x>=5){pts+=x;ex++;} else if(x>=2){pts+=x;re++;} else if(x===0) wr++;
     }
   });
   return {pts,ex,re,wr,pl,pd};
@@ -1443,6 +1496,7 @@ function vTabla(){
           <div class="score-rule"><span class="sr-badge sr-exact">5</span> Marcador exacto <span class="score-rule-pts">+5 pts</span></div>
           <div class="score-rule"><span class="sr-badge sr-result">2</span> Resultado correcto <span class="score-rule-pts">+2 pts</span></div>
           <div class="score-rule"><span class="sr-badge sr-wrong">0</span> Resultado incorrecto <span class="score-rule-pts">0 pts</span></div>
+          <div class="score-rule"><span class="sr-badge sr-result">+1</span> Ganador en penales (eliminatorias) <span class="score-rule-pts">bonus</span></div>
         </div>
         <div style="height:48px"></div>
       </div>
@@ -1506,8 +1560,11 @@ function vPartidos(){
             <div class="res-sub">${pp}${bb}</div>
           </div>`;
         } else if(p){
-          const drawTag=p.g1===p.g2?`<div style="margin-top:3px"><span class="draw-tag">Empate</span></div>`:'';
-          right=`<div style="text-align:right"><div class="pred-score">${p.g1}<span class="sp"> — </span>${p.g2}</div>${drawTag}</div>`;
+          const isDraw=p.g1===p.g2;
+          const drawTag=isDraw?`<span class="draw-tag">Empate</span>`:'';
+          const penTag=isDraw&&p.pen&&isKO(m.ph)?`<span class="pen-tag">${p.pen==='t1'?m.t1:m.t2}</span>`:'';
+          const badges=(drawTag||penTag)?`<div style="margin-top:3px;display:flex;gap:4px;justify-content:flex-end">${drawTag}${penTag}</div>`:'';
+          right=`<div style="text-align:right"><div class="pred-score">${p.g1}<span class="sp"> — </span>${p.g2}</div>${badges}</div>`;
         } else {
           right=`<span class="pred-none">Sin pronóstico</span>`;
         }
@@ -1552,8 +1609,10 @@ function vPartidos(){
               valHtml=`<span class="pred-val">${p.g1}–${p.g2}</span>
                         <span class="pts-dot ${badge}">${bdg}</span>`;
             } else {
-              const drawTag=p.g1===p.g2?`<span class="draw-tag">E</span>`:'';
-              valHtml=`<span class="pred-val">${p.g1}–${p.g2}</span>${drawTag}`;
+              const isDraw=p.g1===p.g2;
+              const drawTag=isDraw?`<span class="draw-tag">E</span>`:'';
+              const penTag=isDraw&&p.pen&&isKO(m.ph)?`<span class="pen-tag">${p.pen==='t1'?m.t1:m.t2}</span>`:'';
+              valHtml=`<span class="pred-val">${p.g1}–${p.g2}</span>${drawTag}${penTag}`;
             }
           } else {
             valHtml=`<span class="pred-none-sm">—</span>`;
@@ -1620,6 +1679,12 @@ function vAdmin(){
       const r=S.results[m.id];
       const done=!!r;
       const v1=done?r.g1:'', v2=done?r.g2:'';
+      const penRow=isKO(m.ph)?`
+        <div class="adm-pen-row">
+          <span class="adm-pen-lbl">Pen:</span>
+          <button class="adm-pen-btn${r&&r.pen==='t1'?' on':''}" data-mid="${m.id}" data-pen-team="t1">${m.t1}</button>
+          <button class="adm-pen-btn${r&&r.pen==='t2'?' on':''}" data-mid="${m.id}" data-pen-team="t2">${m.t2}</button>
+        </div>`:'';
       return `<div class="adm-row">
         <div class="adm-teams">${m.t1} · ${m.t2}</div>
         <div class="adm-right">
@@ -1631,6 +1696,7 @@ function vAdmin(){
           <button class="adm-save${done?' done':''}" data-mid="${m.id}">${done?'✓':'Guardar'}</button>
           ${done?`<button class="adm-clr" data-clr="${m.id}">✕</button>`:''}
         </div>
+        ${penRow}
       </div>`;
     }).join('');
     return `<div><div class="day-hdr">${ds}</div>${rows}</div>`;
@@ -1692,22 +1758,28 @@ function openPM(mid){
   if(r){
     S.pm={mid};
     const pts=mPts(mid,uid);
+    const penBonus=pts>0&&isKO(m.ph)&&r.pen&&p&&p.pen&&r.pen===p.pen?1:0;
     let ptsTxt='';
     if(p){
-      if(pts===5) ptsTxt='¡Exacto! +5';
-      else if(pts===2) ptsTxt='Resultado +2';
+      if(pts>=5) ptsTxt=`¡Exacto! +${pts}`;
+      else if(pts>=2) ptsTxt=`Resultado +${pts}`;
       else ptsTxt='Sin puntos';
     }
-    const bg=pts===5?'var(--ink)':pts===2?'var(--muted)':'transparent';
+    const basePts=pts-penBonus;
+    const bg=basePts===5?'var(--ink)':basePts===2?'var(--muted)':'transparent';
     const fg=pts===0?'var(--muted)':'#fff';
     const bdr=pts===0?'border:1px solid var(--border);':'';
+    const rPenHtml=r.pen&&isKO(m.ph)?`<div style="margin-top:6px"><span class="pen-tag">Penales: ${r.pen==='t1'?m.t1:m.t2}</span></div>`:'';
+    const pPenHtml=p&&p.pen&&isKO(m.ph)?`<span class="pen-tag">${p.pen==='t1'?m.t1:m.t2}</span>`:'';
     document.getElementById('pm-body').innerHTML=`
       <div class="pm-res">
         <div class="pm-res-lbl">Resultado</div>
         <div class="pm-res-score">${r.g1} — ${r.g2}</div>
+        ${rPenHtml}
         ${p?`<div class="pm-pred-detail">
           <span class="pm-pred-who">${u?u.name:'Tú'}</span>
           <span class="pm-pred-score">${p.g1}–${p.g2}</span>
+          ${pPenHtml}
           <span class="pm-pts-badge" style="background:${bg};color:${fg};${bdr}">${pts}</span>
           <span style="font-family:var(--f);font-size:12px;color:var(--muted)">${ptsTxt}</span>
         </div>`:
@@ -1718,7 +1790,8 @@ function openPM(mid){
         <button class="pm-save" id="pm-cls" style="${p?'':'flex:1'}">Cerrar</button>
       </div>`;
   } else {
-    S.pm={mid, g1:p?+p.g1:0, g2:p?+p.g2:0};
+    S.pm={mid, ph:m.ph, t1:m.t1, t2:m.t2, g1:p?+p.g1:0, g2:p?+p.g2:0, pen:p?p.pen||null:null};
+    const showPen=S.pm.g1===S.pm.g2&&isKO(m.ph);
     document.getElementById('pm-body').innerHTML=`
       <div class="pm-teams">
         <div class="pm-trow">
@@ -1741,6 +1814,14 @@ function openPM(mid){
       <div class="pm-draw-row">
         <button class="pm-draw-btn${S.pm.g1===S.pm.g2?' on':''}" id="pm-draw">= Empate</button>
       </div>
+      ${isKO(m.ph)?`
+      <div class="pm-pen-row${showPen?' visible':''}" id="pm-pen-row">
+        <div class="pm-pen-lbl">Ganador en penales (opcional)</div>
+        <div class="pm-pen-btns">
+          <button class="pm-pen-btn${S.pm.pen==='t1'?' on':''}" data-pen="t1">${m.t1}</button>
+          <button class="pm-pen-btn${S.pm.pen==='t2'?' on':''}" data-pen="t2">${m.t2}</button>
+        </div>
+      </div>`:''}
       <div class="pm-actions">
         <button class="pm-cancel" id="pm-cls">Cancelar</button>
         ${p?`<button class="pm-del" id="pm-del">Eliminar</button>`:''}
@@ -1925,7 +2006,20 @@ document.getElementById('main').addEventListener('click',e=>{
     const i2=document.querySelector(`.adm-score[data-mid="${mid}"][data-g="2"]`);
     const g1=parseInt(i1?.value), g2=parseInt(i2?.value);
     if(isNaN(g1)||isNaN(g2)){ toast('Ingresa ambos marcadores'); return; }
-    S.results[mid]={g1,g2,t:Date.now()}; delete S.deletedResults[mid]; persist(); render(); toast('Resultado guardado'); return;
+    const result={g1,g2,t:Date.now()};
+    const m=MATCHES.find(x=>x.id===mid);
+    if(m&&isKO(m.ph)){
+      const penBtn=document.querySelector(`.adm-pen-btn.on[data-mid="${mid}"]`);
+      if(penBtn) result.pen=penBtn.dataset.penTeam;
+    }
+    S.results[mid]=result; delete S.deletedResults[mid]; persist(); render(); toast('Resultado guardado'); return;
+  }
+  const apb=e.target.closest('.adm-pen-btn');
+  if(apb){
+    const mid=apb.dataset.mid, isOn=apb.classList.contains('on');
+    document.querySelectorAll(`.adm-pen-btn[data-mid="${mid}"]`).forEach(b=>b.classList.remove('on'));
+    if(!isOn) apb.classList.add('on');
+    return;
   }
   const cl=e.target.closest('[data-clr]');
   if(cl){ const mid=cl.dataset.clr; delete S.results[mid]; S.deletedResults[mid]=Date.now(); persist(); render(); toast('Resultado eliminado'); return; }
@@ -1966,8 +2060,14 @@ document.getElementById('pmodal').addEventListener('click',e=>{
     const t=step.dataset.t, dv=parseInt(step.dataset.d);
     S.pm[t]=Math.max(0,Math.min(20,S.pm[t]+dv));
     document.getElementById(`pm-${t}`).textContent=S.pm[t];
+    const isDraw=S.pm.g1===S.pm.g2;
     const db=document.getElementById('pm-draw');
-    if(db) db.classList.toggle('on', S.pm.g1===S.pm.g2);
+    if(db) db.classList.toggle('on', isDraw);
+    const penRow=document.getElementById('pm-pen-row');
+    if(penRow){
+      penRow.classList.toggle('visible', isDraw);
+      if(!isDraw){ S.pm.pen=null; document.querySelectorAll('[data-pen]').forEach(b=>b.classList.remove('on')); }
+    }
     return;
   }
   if(e.target.id==='pm-draw'&&S.pm){
@@ -1975,7 +2075,17 @@ document.getElementById('pmodal').addEventListener('click',e=>{
       S.pm.g2=S.pm.g1;
       document.getElementById('pm-g2').textContent=S.pm.g2;
       e.target.classList.add('on');
+      const penRow=document.getElementById('pm-pen-row');
+      if(penRow) penRow.classList.add('visible');
     }
+    return;
+  }
+  const pb=e.target.closest('[data-pen]');
+  if(pb&&S.pm){
+    const pen=pb.dataset.pen;
+    const isOn=pb.classList.contains('on');
+    document.querySelectorAll('[data-pen]').forEach(b=>b.classList.remove('on'));
+    if(!isOn){ pb.classList.add('on'); S.pm.pen=pen; } else { S.pm.pen=null; }
     return;
   }
   if(e.target.id==='pm-del'&&S.pm){
@@ -1986,7 +2096,9 @@ document.getElementById('pmodal').addEventListener('click',e=>{
   }
   if(e.target.id==='pm-ok'&&S.pm){
     const k=`${S.cur}_${S.pm.mid}`;
-    S.predictions[k]={g1:S.pm.g1,g2:S.pm.g2,t:Date.now()};
+    const pred={g1:S.pm.g1,g2:S.pm.g2,t:Date.now()};
+    if(S.pm.pen&&isKO(S.pm.ph)&&S.pm.g1===S.pm.g2) pred.pen=S.pm.pen;
+    S.predictions[k]=pred;
     delete S.deleted[k];
     persist(); closePM(); render(); toast('Predicción guardada'); return;
   }
