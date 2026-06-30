@@ -759,6 +759,32 @@ body {
 }
 .pm-del:hover { background: #FEF2F2; border-color: #B91C1C; }
 
+/* Draw toggle button in prediction modal */
+.pm-draw-row {
+  padding: 0 22px 14px;
+  display: flex; justify-content: center;
+}
+.pm-draw-btn {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 20px;
+  font-family: var(--f); font-size: 13px; font-weight: 600;
+  color: var(--muted); background: var(--surface);
+  border: 1.5px solid var(--border); border-radius: 20px;
+  cursor: pointer; transition: all 0.15s;
+  user-select: none;
+}
+.pm-draw-btn:hover { border-color: var(--ink2); color: var(--ink2); }
+.pm-draw-btn.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+
+/* Draw indicator badge in match list */
+.draw-tag {
+  font-family: var(--f); font-size: 10px; font-weight: 700;
+  letter-spacing: 0.03em; text-transform: uppercase;
+  color: var(--muted); background: var(--surface);
+  border: 1px solid var(--border); border-radius: 4px;
+  padding: 1px 5px;
+}
+
 /* Result block in pred modal */
 .pm-res {
   margin: 0 22px 14px;
@@ -1480,7 +1506,8 @@ function vPartidos(){
             <div class="res-sub">${pp}${bb}</div>
           </div>`;
         } else if(p){
-          right=`<span class="pred-score">${p.g1}<span class="sp"> — </span>${p.g2}</span>`;
+          const drawTag=p.g1===p.g2?`<div style="margin-top:3px"><span class="draw-tag">Empate</span></div>`:'';
+          right=`<div style="text-align:right"><div class="pred-score">${p.g1}<span class="sp"> — </span>${p.g2}</div>${drawTag}</div>`;
         } else {
           right=`<span class="pred-none">Sin pronóstico</span>`;
         }
@@ -1525,7 +1552,8 @@ function vPartidos(){
               valHtml=`<span class="pred-val">${p.g1}–${p.g2}</span>
                         <span class="pts-dot ${badge}">${bdg}</span>`;
             } else {
-              valHtml=`<span class="pred-val">${p.g1}–${p.g2}</span>`;
+              const drawTag=p.g1===p.g2?`<span class="draw-tag">E</span>`:'';
+              valHtml=`<span class="pred-val">${p.g1}–${p.g2}</span>${drawTag}`;
             }
           } else {
             valHtml=`<span class="pred-none-sm">—</span>`;
@@ -1709,6 +1737,9 @@ function openPM(mid){
             <button class="pm-step" data-t="g2" data-d="1">+</button>
           </div>
         </div>
+      </div>
+      <div class="pm-draw-row">
+        <button class="pm-draw-btn${S.pm.g1===S.pm.g2?' on':''}" id="pm-draw">= Empate</button>
       </div>
       <div class="pm-actions">
         <button class="pm-cancel" id="pm-cls">Cancelar</button>
@@ -1934,7 +1965,18 @@ document.getElementById('pmodal').addEventListener('click',e=>{
   if(step&&S.pm){
     const t=step.dataset.t, dv=parseInt(step.dataset.d);
     S.pm[t]=Math.max(0,Math.min(20,S.pm[t]+dv));
-    document.getElementById(`pm-${t}`).textContent=S.pm[t]; return;
+    document.getElementById(`pm-${t}`).textContent=S.pm[t];
+    const db=document.getElementById('pm-draw');
+    if(db) db.classList.toggle('on', S.pm.g1===S.pm.g2);
+    return;
+  }
+  if(e.target.id==='pm-draw'&&S.pm){
+    if(S.pm.g1!==S.pm.g2){
+      S.pm.g2=S.pm.g1;
+      document.getElementById('pm-g2').textContent=S.pm.g2;
+      e.target.classList.add('on');
+    }
+    return;
   }
   if(e.target.id==='pm-del'&&S.pm){
     const k=`${S.cur}_${S.pm.mid}`;
